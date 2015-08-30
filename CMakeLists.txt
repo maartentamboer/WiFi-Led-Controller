@@ -22,6 +22,10 @@ set(BLINKLED_SRC
   src/Main.cpp
   src/CurrentSensor.cpp
   src/Temperature.cpp
+  src/LedControl.cpp
+  src/EspInterface.cpp
+  src/Error.cpp
+  src/MqttInterface.cpp
 )
 
 set(BIN
