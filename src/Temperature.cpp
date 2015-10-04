@@ -4,6 +4,7 @@
 CTemperature::CTemperature(I2C& rI2c, uint8_t Address)
 : mI2c(rI2c)
 , mAddress(Address)
+, mLastTemperature(0.0f)
 {
 
 }
@@ -32,6 +33,8 @@ float CTemperature::GetTemperature()
   int TemperatureSum = ((Data[0] << 8) | Data[1]) >> 4;
   float Celsius = TemperatureSum*0.0625f;
 
+  mLastTemperature = Celsius;
+
   return Celsius;
 }
 
@@ -49,5 +52,12 @@ bool CTemperature::GetTemperature(float& Temperature)
   int TemperatureSum = ((Data[0] << 8) | Data[1]) >> 4;
   Temperature = TemperatureSum*0.0625f;
 
+  mLastTemperature = Temperature;
+
   return true;
+}
+
+float CTemperature::GetLastTemperature()
+{
+  return mLastTemperature;
 }

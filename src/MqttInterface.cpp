@@ -1,5 +1,7 @@
 #include "MqttInterface.h"
 
+#include <inttypes.h>
+
 namespace Constants
 {
   const char LightTopic[] = "IOT/Light/HSV";
@@ -19,6 +21,10 @@ struct SRpcFunction
 };
 
 SRpcFunction FunctionTable[] = { { &CMqttInterface::GetTemperature, "GetTemperature" },
+                                 { &CMqttInterface::GetCurrent, "GetCurrent" },
+                                 { &CMqttInterface::GetVoltage, "GetVoltage" },
+                                 { &CMqttInterface::GetVCT, "GetVCT" },
+                                 { &CMqttInterface::SetDac, "SetDAC" },
                                  { &CMqttInterface::Function2, "Function2" } };
 
 
@@ -28,12 +34,14 @@ CMqttInterface::CMqttInterface(CEspInterface& rEspInterface,
                                CLedControl& rLedControl,
                                CTemperature& rTemperature,
                                CCurrentSensor& rCurrentSensor,
-                               Serial& rDebug)
+                               Serial& rDebug,
+                               CDac& rDac)
 : mrEsp(rEspInterface)
 , mrLedControl(rLedControl)
 , mrTemperature(rTemperature)
 , mrCurrentSensor(rCurrentSensor)
 , mrDebug(rDebug)
+, mrDac(rDac)
 {
 
 }
@@ -82,14 +90,18 @@ bool CMqttInterface::Handler()
       float h,s,v;
       sscanf(&pBuffer[10], "%f,%f,%f", &h, &s, &v);
       //pc.printf("Set lights: h: %f, s: %f, v: %f\n", h, s, v);
-      mrLedControl.SetHsvRgbW(h,s,v);
+      mrLedControl.SetHsvRgb(h,s,v);
       //pc.printf("%u\n", time(NULL));
     }
-
-
-    if(strncmp(pBuffer, BroadCastRPCTopic, sizeof(BroadCastRPCTopic)-1) == 0)
+    else if(strncmp(pBuffer, BroadCastRPCTopic, sizeof(BroadCastRPCTopic)-1) == 0)
     {
       RPCDecoder(&pBuffer[sizeof(BroadCastRPCTopic)]);
+    }
+    else if(strncmp(pBuffer, mPrivateRPCTopic, 25) == 0)//Like this IOT/RPC/18:fe:34:a6:d3:de
+    {
+      mrDebug.printf("Private RPC: %s\n", &pBuffer[26]);
+      RPCDecoder(&pBuffer[26]);
+
     }
   }
 
@@ -111,7 +123,7 @@ bool CMqttInterface::RPCDecoder(char* pMessage)
 
   //Find the Function name length
   char* pOffset = strchr(pMessage,';');
-  if(pOffset != NULL)
+  if(pOffset != nullptr)
   {
     bool FuncFound = false;
     uint32_t Offset = pOffset-pMessage+1;   //Calc difference from pointer locs
@@ -137,13 +149,17 @@ bool CMqttInterface::RPCDecoder(char* pMessage)
   return true;
 }
 
+void CMqttInterface::Announce()
+{
+
+}
 
 bool CMqttInterface::GetTemperature(char* pMessage)
 {
   mrDebug.printf("GetTemperature: %s\n", pMessage);
   char Response[20];
   
-  float Temperature = mrTemperature.GetTemperature();
+  float Temperature = mrTemperature.GetLastTemperature();
   
   sprintf(Response, "%3.2f", Temperature);
 
@@ -155,5 +171,80 @@ bool CMqttInterface::GetTemperature(char* pMessage)
 
 bool CMqttInterface::Function2(char* pMessage)
 {
+  return true;
+}
+
+
+bool CMqttInterface::GetVoltage(char *pMessage)
+{
+  mrDebug.printf("GetTemperature: %s\n", pMessage);
+  char Response[20];
+
+  float Voltage = mrCurrentSensor.GetLastVoltage();
+
+  sprintf(Response, "%3.2f", Voltage);
+
+  mrEsp.Publish(mPrivateRPCResponseTopic, Response);
+
+  return true;
+}
+
+bool CMqttInterface::GetCurrent(char *pMessage)
+{
+  mrDebug.printf("GetCurrent: %s\n", pMessage);
+  char Response[20];
+
+  float Current = mrCurrentSensor.GetLastCurrent();
+
+  sprintf(Response, "%3.3f", Current);
+
+  mrEsp.Publish(mPrivateRPCResponseTopic, Response);
+
+  return true;
+}
+
+bool CMqttInterface::GetVCT(char *pMessage)
+{
+  mrDebug.printf("GetVCT: %s\n", pMessage);
+  char Response[40];
+
+  float Voltage = mrCurrentSensor.GetLastVoltage();
+  float Current = mrCurrentSensor.GetLastCurrent();
+  float Temperature = mrTemperature.GetLastTemperature();
+
+  sprintf(Response, "%3.2f;%3.3f;%3.2f", Voltage, Current, Temperature);
+
+  mrEsp.Publish(mPrivateRPCResponseTopic, Response);
+
+  return true;
+}
+
+bool CMqttInterface::SetDac(char *pMessage)
+{
+  mrDebug.printf("SetDac: %s\n", pMessage);
+
+  if(strncmp(pMessage, "OP", 2) == 0)   //Operational
+  {
+    uint8_t Value;
+    sscanf(pMessage, "OP;%" SCNu8, &Value);
+    mrDebug.printf("SetDac: Operational %u\n", Value);
+    mrDac.Set(Value);
+  }
+  else if(strncmp(pMessage, "P1", 2) == 0)    //PowerDown1
+  {
+    mrDebug.printf("SetDac: P1\n");
+    mrDac.PowerDown(CDac::E1kPowerDown);
+  }
+  else if(strncmp(pMessage, "P2", 2) == 0) //PowerDown2
+  {
+    mrDebug.printf("SetDac: P2\n");
+    mrDac.PowerDown(CDac::E100kPowerDown);
+  }
+  else if(strncmp(pMessage, "P3", 2) == 0)  //PowerDown3
+  {
+    mrDebug.printf("SetDac: P3\n");
+    mrDac.PowerDown(CDac::EHighZPowerDown);
+  }
+
   return true;
 }

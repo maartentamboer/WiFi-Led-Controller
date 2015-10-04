@@ -1,69 +1,65 @@
 #include "mbed.h"
+#include "rtos.h"
+
 #include "Temperature.h"
 #include "CurrentSensor.h"
 #include "LedControl.h"
 #include "EspInterface.h"
 #include "MqttInterface.h"
+#include "SystemManagement.h"
+#include "DebugLeds.h"
+#include "GlobalData.h"
+#include "Dac.h"
+#include "Eeprom.h"
+#include "Settings.h"
 
-#include <math.h>
-#define DEG_TO_RAD(X) (M_PI*(X)/180)
+
+CLedControl LedControl(PB_1, PB_0, PA_11, PA_8);
 
 Serial pc(SERIAL_TX, SERIAL_RX);
 CEspInterface Esp(PA_9, PA_10);
 
-DigitalOut myled(LED1);
-
-CLedControl LedControl(PA_8, PB_1, PB_0, PA_11);
-
 I2C i2c(PB_9, PB_8);
+CTemperature Tmp100(i2c, 0x90);
+CCurrentSensor Ina219(i2c, 0x80);
 
-char Buffer[255] = {0};
-char EspBuffer[255] = {0};
-uint16_t BufferLocation = 0;
-uint16_t EspBufferLocation = 0;
-bool Parse = false;
-bool EspParse = false;
+CDac Dac(i2c, 0x98);
 
-void PrintErrors()
+CDebugLeds Leds(i2c, 0x40, true);
+
+CEeprom Eeprom(i2c, 0xA0);
+CSettings Settings(Eeprom);
+
+CSystemManagement SystemManagement(Ina219, Tmp100, Esp,
+                                   LedControl, pc, Leds,
+                                   Eeprom, Settings);
+
+void SafetyThread(void const* args)
 {
-  uint32_t NumberOfErrors = GlobalData::ErrorHandler.GetNumberOfErrors();
-  pc.printf("Number of Errors: %u\n", NumberOfErrors);
-  for(uint32_t i = 0; i < NumberOfErrors; i++)
+  while(1)
   {
-    pc.printf("  Error number: %u\n", GlobalData::ErrorHandler.GetErrorCode(i));
-    pc.printf("  Description : %s\n", GlobalData::ErrorHandler.GetDescription(i));
+    GlobalData::I2cUsageMutex.lock();
+    SystemManagement.SafetyHandler();
+    Leds.InvertLeds(LED(0));
+    GlobalData::I2cUsageMutex.unlock();
+    Thread::wait(250);
   }
 }
 
-void RecvPC(void)
+void BlinkThread(void const* args)
 {
-  char Rec = pc.getc();
-  if(Rec == '\r') //Skip the carriage return
-    return;
-  if(BufferLocation<255)
+  while(1)
   {
-    if(Rec == '\n')
-    {
-      Buffer[BufferLocation] = 0;
-      BufferLocation = 0;
-      Parse = true;
-    }
-    else
-    {
-      Buffer[BufferLocation] = Rec;
-      BufferLocation++;
-    }
+    GlobalData::I2cUsageMutex.lock();
+    Leds.InvertLeds(LED(7));
+    GlobalData::I2cUsageMutex.unlock();
+    Thread::wait(500);
   }
-  else
-  {
-    BufferLocation = 0;
-    pc.printf("ERROR: Overflow in PC UART\n");
-  }
-  pc.putc(Rec);
 }
 
 int main() {
   pc.baud(115200);
+  i2c.frequency(100000);
 
   pc.printf("***** WiFi Led Controller *****\n");
   pc.printf("* Maarten Tamboer             *\n");
@@ -83,55 +79,24 @@ int main() {
     }
   }
 
-  CTemperature Tmp100(i2c, 0x90);
-  if(!Tmp100.Available())
-  {
-    pc.printf("Temperature sensor is not available\n");
-  }
+  i2c.frequency(100000);
 
-  CCurrentSensor Ina219(i2c, 0x80);
-  if(Ina219.Available())
-  {
-    uint16_t Conf;
-    Ina219.GetConfiguration(Conf);
-    pc.printf("INA219: Configuration: 0x%X\n", Conf);
-  }
-  else
-  {
-    pc.printf("Current sensor is not available");
-  }
+  SystemManagement.Initialize();
 
-  pc.printf("I2C: Current monitor\n");
-  pc.printf("I2C: Temperature sensor: %f\n", Tmp100.GetTemperature());
-  pc.printf("I2C: EEPROM\n");
-  pc.printf("SPI: Flash\n");
-
-  pc.printf("WiFi Module\n");
-  pc.printf("  Init ...\n");
-  if(!Esp.Initialize())
-  {
-    pc.printf("Failed initializing ESP8266\n");
-    if(GlobalData::ErrorHandler.GetNumberOfErrors() > 0)
-    {
-      PrintErrors();
-      GlobalData::ErrorHandler.ClearErrors();
-    }
-  }
-  pc.printf("  MAC: %s\n", Esp.GetMac());
-  pc.printf("  IP : %s\n", Esp.GetIp());
-
-  pc.printf("Attaching Receive interrupts\n");
-  pc.attach(&RecvPC);
-  pc.printf("> ");
-
-  CMqttInterface MqttInterface(Esp, LedControl, Tmp100, Ina219, pc);
+  CMqttInterface MqttInterface(Esp, LedControl, Tmp100, Ina219, pc, Dac);
   MqttInterface.Initialize();
   
+
+  RtosTimer SafetyTimerObj(SafetyThread, osTimerPeriodic);
+  SafetyTimerObj.start(250); //every 250 ms
+
+  Thread BlinkThreadObj(BlinkThread);
 
   while(1) {
 
     Esp.Handler();
     MqttInterface.Handler();
+    SystemManagement.Handler();
 
   }
 }

@@ -16,6 +16,7 @@ CLedControl::CLedControl(PinName Red, PinName Green, PinName Blue, PinName White
   mGreenLed.period(PwmPeriod);   //500Hz
   mBlueLed.period(PwmPeriod);    //500Hz
   mWhiteLed.period(PwmPeriod);   //500Hz
+
   mRedLed = 0.0f;
   mGreenLed = 0.0f;
   mBlueLed = 0.0f;

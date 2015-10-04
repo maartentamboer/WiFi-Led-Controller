@@ -11,7 +11,7 @@ set(MBED_TARGET NUCLEO_F401RE)
 
 # ------------------------------------------------------------------------------
 # will add the include dirs and link the lib
-#set(USE_RTOS true)
+set(USE_RTOS true)
 #set(USE_NET true)
 #set(USE_USB true)
 #set(USE_DSP true)
@@ -26,6 +26,12 @@ set(BLINKLED_SRC
   src/EspInterface.cpp
   src/Error.cpp
   src/MqttInterface.cpp
+  src/SystemManagement.cpp
+  src/DebugLeds.cpp
+  src/GlobalData.cpp
+  src/Dac.cpp
+  src/Settings.cpp
+  src/Eeprom.cpp
 )
 
 set(BIN

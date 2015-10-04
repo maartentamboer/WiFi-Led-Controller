@@ -17,6 +17,10 @@ public:
     EInvalidParam,
     EInvalidData,
     ETimeOut,
+    EOverVolt,
+    EUnderVolt,
+    EOverCurrent,
+    EOverTemperature,
     EUnkown = 0xff
   };
 

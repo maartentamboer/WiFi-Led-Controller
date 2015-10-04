@@ -4,7 +4,11 @@ static const char *ErrorDescriptions[] =  { "No Error"
                                           , "OverFlow"
                                           , "Invalid Parameter"
                                           , "Invalid Data"
-                                          , "Time-Out"};
+                                          , "Time-Out"
+                                          , "Over voltage"
+                                          , "Under voltage"
+                                          , "Over current"
+                                          , "Over temperature"};
 
 static const char* UnkownError = "Unkown Error";
 
